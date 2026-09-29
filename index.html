@@ -1,0 +1,1417 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Holo Sticker Viewer</title>
+<style>
+  :root {
+    --bg: #0c0b10;
+    --fg: #f1eef7;
+    --dim: rgba(241, 238, 247, 0.56);
+    --line: rgba(241, 238, 247, 0.16);
+    --glass: rgba(24, 22, 32, 0.56);
+    --accent: #c9b6ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
+    font-family: "Inter", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  canvas#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .ui { position: fixed; inset: 0; pointer-events: none; }
+  .ui > * { pointer-events: auto; }
+  header { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: flex-start;
+    padding: max(18px, env(safe-area-inset-top)) 22px 0; pointer-events: none; }
+  .brand { font-size: 11px; letter-spacing: 0.32em; text-transform: uppercase; color: var(--dim); }
+  .brand b { color: var(--fg); font-weight: 600; }
+  .meta { margin-top: 10px; }
+  .meta h1 { margin: 0; font-size: clamp(22px, 3.4vw, 34px); font-weight: 700; letter-spacing: 0.06em; }
+  .meta p { margin: 4px 0 0; font-size: 12px; color: var(--dim); letter-spacing: 0.04em; }
+  .counter { white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--dim); letter-spacing: 0.12em; text-align: right; }
+  .counter b { color: var(--fg); font-size: 22px; font-weight: 600; margin-right: 4px; }
+  .dots { display: flex; gap: 6px; justify-content: flex-end; margin-top: 10px; }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--line); transition: background .3s, transform .3s; }
+  .dots i.on { background: var(--fg); transform: scale(1.25); }
+  .hint span { display: inline-block; }
+  .side { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 26px; line-height: 1; color: var(--fg); pointer-events: none;
+    background: rgba(255, 255, 255, 0.08); border: 1px solid var(--line); opacity: 0; transition: opacity .2s, transform .2s; }
+  .side.l { left: 18px; } .side.r { right: 18px; }
+  .side.on { opacity: 1; }
+  .side.l.on { transform: translate(-3px, -50%); } .side.r.on { transform: translate(3px, -50%); }
+  .hint { position: absolute; left: 50%; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 62px); transform: translateX(-50%);
+    font-size: 12px; color: rgba(241, 238, 247, 0.86); letter-spacing: 0.06em; white-space: nowrap; pointer-events: none;
+    text-shadow: 0 0 6px rgba(8, 7, 12, 0.95), 0 0 14px rgba(8, 7, 12, 0.8), 0 1px 2px rgba(0, 0, 0, 0.9); }
+  nav { position: absolute; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+    display: flex; gap: 6px; padding: 6px; border-radius: 999px; background: var(--glass); border: 1px solid var(--line);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  nav button, nav label { appearance: none; border: 0; background: transparent; color: var(--fg); font: inherit; font-size: 13px;
+    padding: 9px 14px; border-radius: 999px; cursor: pointer; white-space: nowrap; letter-spacing: 0.03em; transition: background .2s; }
+  nav button:hover, nav label:hover { background: rgba(255,255,255,0.08); }
+  nav button.on { background: var(--fg); color: #111; }
+  nav .arrow { font-size: 18px; line-height: 1; padding: 7px 13px; }
+  nav input { display: none; }
+  .finish { position: absolute; left: 50%; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 60px); transform: translateX(-50%);
+    display: grid; gap: 10px; padding: 12px 14px; border-radius: 16px; background: var(--glass); border: 1px solid var(--line);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); width: max-content; max-width: calc(100vw - 32px); }
+  .finish[hidden] { display: none; }
+  .finish .row { display: flex; align-items: center; gap: 10px; }
+  .finish .k { flex: none; width: 64px; font-size: 11px; color: var(--dim); letter-spacing: 0.06em; }
+  .finish .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .finish .chips button { appearance: none; font: inherit; font-size: 12px; color: var(--fg); background: transparent;
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+  .finish .chips button:hover { background: rgba(255,255,255,0.08); }
+  .finish .chips button.on { background: var(--fg); color: #111; border-color: var(--fg); }
+  #leaders { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  #labels { position: absolute; inset: 0; pointer-events: none; }
+  .lbl { position: absolute; transform: translateY(-50%); font-size: 12px; line-height: 1.35; white-space: nowrap; opacity: 0; transition: opacity .35s; }
+  .lbl .n { color: var(--accent); font-variant-numeric: tabular-nums; margin-right: 6px; font-size: 11px; }
+  .lbl .t { font-weight: 600; font-size: 13px; }
+  .lbl .s { color: var(--dim); font-size: 11px; }
+  .lbl .um { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line);
+    font-variant-numeric: tabular-nums; font-size: 11px; color: var(--fg); }
+  .total { position: absolute; font-size: 11px; color: var(--dim); letter-spacing: 0.04em; opacity: 0; transition: opacity .35s; white-space: nowrap; }
+  .drop { position: fixed; inset: 12px; border: 1.5px dashed rgba(255,255,255,0.4); border-radius: 18px; display: grid; place-items: center;
+    font-size: 15px; color: var(--fg); background: rgba(12,11,16,0.5); opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .drop.on { opacity: 1; }
+  .busy { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); font-size: 12px; color: var(--dim); letter-spacing: 0.2em; }
+  @media (max-width: 640px) {
+    header { padding-left: 16px; padding-right: 16px; }
+    .brand em { display: none; }
+    .meta p { max-width: 240px; }
+    nav button, nav label { padding: 8px 10px; font-size: 12px; }
+    .hint { font-size: 11px; white-space: normal; text-align: center; width: max-content; max-width: calc(100vw - 32px); }
+    .lbl .s { display: none; }
+    .finish .row { align-items: flex-start; flex-direction: column; gap: 6px; }
+  }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div class="busy" id="busy">LOADING</div>
+<div class="ui">
+  <header>
+    <div>
+      <div class="brand"><b>Holo</b> Sticker<em style="font-style:normal"> · Collector's Viewer</em></div>
+      <div class="meta"><h1 id="name">—</h1><p id="spec"></p></div>
+    </div>
+    <div>
+      <div class="counter"><b id="idx">01</b>/ <span id="total">04</span></div>
+      <div class="dots" id="dots"></div>
+    </div>
+  </header>
+  <svg id="leaders"></svg>
+  <div id="labels"></div>
+  <div class="hint" id="hint"><span>ドラッグで傾ける</span> · <span>縁をつかんでめくる</span> · <span>左右の端をクリック / スワイプで切り替え</span></div>
+  <div class="side l" id="sideL">‹</div>
+  <div class="side r" id="sideR">›</div>
+  <nav>
+    <button class="arrow" id="prev" aria-label="前へ">‹</button>
+    <button id="explode">分解表示</button>
+    <button id="flip">裏返す</button>
+    <button id="finish" aria-expanded="false">仕上げ</button>
+    <label>PNG 読込<input type="file" id="file" accept="image/png,image/webp,image/*" multiple></label>
+    <button class="arrow" id="next" aria-label="次へ">›</button>
+  </nav>
+  <div class="finish" id="finishPanel" hidden>
+    <div class="row"><span class="k">ホロ柄</span><div class="chips" id="chipsHolo"></div></div>
+    <div class="row"><span class="k">グリッター</span><div class="chips" id="chipsGlitter"></div></div>
+  </div>
+</div>
+<div class="drop" id="drop">透明背景の PNG をドロップ</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* =========================================================================
+   Constants
+   ========================================================================= */
+const TEX = 1024;          // working resolution of the sticker sheet
+const SIZE = 2.6;          // world size of the square sheet
+const BORDER = 30;         // die-cut border offset (px)
+const CLOSE = 44;          // morphological closing radius (smooths the cut line)
+const T_ASM = 0.036;       // assembled thickness (exaggerated ~5x)
+const GROUND_Z = -1.05;
+
+const M = { FRONT: 0, EDGE: 1, LINER_BACK: 2, LAM: 3, INK: 4, SUB: 5, GLUE: 6, LINER_TOP: 7 };
+
+// bottom → top
+const LAYERS = [
+  { key: 'liner', mode: M.LINER_TOP, um: 90, ex: 0.07,  edge: [0.93, 0.91, 0.86], name: '剥離紙', sub: 'シリコーンコート剥離紙' },
+  { key: 'glue',  mode: M.GLUE,      um: 20, ex: 0.022, edge: [0.70, 0.72, 0.76], name: '糊', sub: 'アクリル系粘着剤' },
+  { key: 'sub',   mode: M.SUB,       um: 50, ex: 0.045, edge: [0.62, 0.63, 0.67], name: 'ホログリッター原反', sub: 'アルミ蒸着 PET ＋ グリッター' },
+  { key: 'ink',   mode: M.INK,       um: 8,  ex: 0.008, edge: null,               name: 'インク', sub: 'UV インク ＋ 白押さえ' },
+  { key: 'lam',   mode: M.LAM,       um: 25, ex: 0.022, edge: [0.78, 0.83, 0.88], name: 'グロスラミネート', sub: 'PET 光沢フィルム' },
+];
+const TOTAL_UM = LAYERS.reduce((a, l) => a + l.um, 0);
+const EX_GAP = 0.56;
+{
+  let z = -T_ASM / 2;
+  LAYERS.forEach((l, i) => {
+    l.asmThick = (l.um / TOTAL_UM) * T_ASM;
+    z += l.asmThick; l.asmTop = z;
+    l.exTop = i * EX_GAP;
+  });
+}
+const EX_CENTER = (LAYERS[LAYERS.length - 1].exTop - LAYERS[0].ex) / 2;
+
+/* =========================================================================
+   GLSL
+   ========================================================================= */
+const GLSL_COMMON = /* glsl */`
+#define MPI 3.14159265
+uniform vec3 uKeyPos; uniform vec3 uFillPos; uniform vec3 uKeyCol; uniform vec3 uFillCol; uniform vec3 uKeyDir; uniform vec3 uAmb;
+uniform float uTime;
+
+float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*.1031); p3 += dot(p3, p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
+vec3 hash32(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*vec3(.1031,.1030,.0973)); p3 += dot(p3, p3.yxz+33.33); return fract((p3.xxy+p3.yzz)*p3.zyx); }
+vec2 hash22(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*vec3(.1031,.1030,.0973)); p3 += dot(p3, p3.yzx+33.33); return fract((p3.xx+p3.yz)*p3.zy); }
+float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.0-2.0*f);
+  return mix(mix(hash12(i), hash12(i+vec2(1,0)), u.x), mix(hash12(i+vec2(0,1)), hash12(i+vec2(1,1)), u.x), u.y); }
+vec3 rainbow(float t){ return clamp(0.5 + 0.5*cos(6.2831853*(t + vec3(0.0, 0.33, 0.67))), 0.0, 1.0); }
+vec3 toLin(vec3 c){ return pow(c, vec3(2.2)); }
+
+// Zucconi 6-bump spectral approximation (nm → rgb)
+vec3 bump3y(vec3 x, vec3 yo){ vec3 y = 1.0 - x*x; return clamp(y - yo, 0.0, 1.0); }
+vec3 spectral(float w){
+  if (w < 400.0 || w > 700.0) return vec3(0.0);
+  float x = (w - 400.0) / 300.0;
+  const vec3 c1 = vec3(3.54585104, 2.93225262, 2.41593945);
+  const vec3 x1 = vec3(0.69549072, 0.49228336, 0.27699880);
+  const vec3 y1 = vec3(0.02312639, 0.15225084, 0.52607955);
+  const vec3 c2 = vec3(3.90307140, 3.21182957, 3.96587128);
+  const vec3 x2 = vec3(0.11748627, 0.86755042, 0.66077860);
+  const vec3 y2 = vec3(0.84897130, 0.88445281, 0.73949448);
+  return bump3y(c1*(x - x1), y1) + bump3y(c2*(x - x2), y2);
+}
+
+// Studio environment: dark room, a big key softbox that follows the key light, a tall strip, a low bounce card.
+float softbox(vec3 d, vec3 c, vec3 upv, vec2 sz, float soft){
+  float cd = dot(d, c); if (cd <= 0.0) return 0.0;
+  vec3 r = normalize(cross(upv, c)); vec3 u = cross(c, r);
+  vec2 p = vec2(dot(d, r), dot(d, u)) / cd;
+  vec2 q = abs(p) - sz;
+  float dist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+  return 1.0 - smoothstep(-soft, soft, dist);
+}
+vec3 studioEnv(vec3 d){
+  vec3 c = mix(vec3(0.010, 0.009, 0.014), vec3(0.045, 0.042, 0.055), smoothstep(-0.5, 0.9, d.y));
+  c += vec3(0.13, 0.125, 0.15) * pow(max(d.z, 0.0), 2.0);
+  c += uKeyCol * 11.0 * softbox(d, uKeyDir, vec3(0,1,0), vec2(0.36, 0.26), 0.09);
+  c += vec3(0.80, 0.88, 1.0) * 5.0 * softbox(d, normalize(vec3(0.80, 0.08, 0.60)), vec3(0,1,0), vec2(0.05, 0.85), 0.035);
+  // thin diagonal strip close to the viewing axis → the long glossy streak on the laminate
+  c += vec3(1.0, 0.98, 0.95) * 7.0 * softbox(d, normalize(vec3(0.22, 0.30, 0.93)), normalize(vec3(0.6, 1.0, 0.0)), vec2(0.022, 0.95), 0.02);
+  c += vec3(1.0, 0.86, 0.92) * 1.6 * softbox(d, normalize(vec3(-0.15, -0.80, 0.58)), vec3(0,1,0), vec2(0.7, 0.07), 0.06);
+  return c;
+}
+float ggx(vec3 N, vec3 V, vec3 L, float a){
+  vec3 H = normalize(L + V); float nh = max(dot(N, H), 0.0); float a2 = a*a;
+  float d = nh*nh*(a2 - 1.0) + 1.0; float D = a2 / (MPI*d*d);
+  float nl = max(dot(N, L), 0.0); float nv = max(dot(N, V), 1e-3); float k = a*0.5;
+  float G = nl/(nl*(1.0-k)+k) * nv/(nv*(1.0-k)+k);
+  return D*G / (4.0*nv + 1e-3);
+}
+float schlick(vec3 N, vec3 V, float f0){ return f0 + (1.0 - f0)*pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 5.0); }
+`;
+
+// Page-curl deformation. Everything beyond a fold line wraps around a cylinder of radius R
+// up to angle Th, then continues straight along the tangent (lifted flap, eventually flipped over).
+const GLSL_CURL = /* glsl */`
+uniform vec2 uPeelO; uniform vec2 uPeelN; uniform float uPeelS; uniform float uPeelR; uniform float uPeelTh; uniform float uPeelK;
+uniform float uOffset;
+vec3 curlRot(vec3 v, float a){
+  vec3 n3 = vec3(uPeelN, 0.0); float vn = dot(v, n3); float vz = v.z;
+  vec3 rest = v - n3*vn - vec3(0.0, 0.0, vz);
+  float c = cos(a), s = sin(a);
+  return rest + n3*(vn*c - vz*s) + vec3(0.0, 0.0, vn*s + vz*c);
+}
+void applyCurl(vec2 xy, float off, out vec3 pos, out float ang){
+  ang = 0.0;
+  // uPeelK bends the fold line slightly into a parabola, so the peel reads as a lifted corner
+  float lat = dot(xy - uPeelO, vec2(-uPeelN.y, uPeelN.x));
+  float fwd = dot(xy - uPeelO, uPeelN);
+  float s = fwd + uPeelS - uPeelK*lat*lat;
+  if (uPeelS <= 0.0 || s <= 0.0) { pos = vec3(xy, off); return; }
+  vec2 foot = xy - uPeelN*s;
+  float R = uPeelR, Th = uPeelTh, along, up;
+  if (s < Th*R) { ang = s/R; along = R*sin(ang); up = R*(1.0 - cos(ang)); }
+  else { ang = Th; float r = s - Th*R; along = R*sin(Th) + r*cos(Th); up = R*(1.0 - cos(Th)) + r*sin(Th); }
+  vec3 nrm = vec3(-uPeelN*sin(ang), cos(ang));
+  pos = vec3(foot + uPeelN*along, up) + nrm*off;
+}
+`;
+
+const VS_STICKER = GLSL_COMMON + GLSL_CURL + /* glsl */`
+varying vec2 vUv; varying vec3 vWP; varying vec3 vN; varying vec3 vT; varying vec3 vB;
+void main(){
+  vec3 p; float a;
+  applyCurl(position.xy, uOffset, p, a);
+  vec4 wp = modelMatrix * vec4(p, 1.0);
+  mat3 m = mat3(modelMatrix);
+  vN = normalize(m * curlRot(vec3(0,0,1), a));
+  vT = normalize(m * curlRot(vec3(1,0,0), a));
+  vB = normalize(m * curlRot(vec3(0,1,0), a));
+  vWP = wp.xyz; vUv = uv;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`;
+
+const FS_STICKER = GLSL_COMMON + /* glsl */`
+uniform sampler2D uArt; uniform sampler2D uData; uniform sampler2D uLiner;
+uniform float uTexel; uniform float uBump; uniform float uGlitterFine; uniform float uGlitterHex; uniform float uFoilScale; uniform int uPattern;
+uniform vec3 uEdgeCol; uniform float uFade;
+varying vec2 vUv; varying vec3 vWP; varying vec3 vN; varying vec3 vT; varying vec3 vB;
+
+vec3 bumpN(vec3 N, vec3 T, vec3 B, vec2 uv, float k){
+  float e = uTexel * 1.5;
+  float hl = texture(uData, uv - vec2(e, 0.0)).r, hr = texture(uData, uv + vec2(e, 0.0)).r;
+  float hd = texture(uData, uv - vec2(0.0, e)).r, hu = texture(uData, uv + vec2(0.0, e)).r;
+  vec2 g = vec2(hr - hl, hu - hd) / (2.0*e);
+  return normalize(N - (T*g.x + B*g.y)*k);
+}
+// back faces only feel the rounded die-cut edge, not the printed relief
+float edgeH(vec2 uv){ float a = texture(uData, uv).a; return 1.0 - (1.0 - a)*(1.0 - a); }
+vec3 bumpEdge(vec3 N, vec3 T, vec3 B, vec2 uv, float k){
+  float e = uTexel * 1.5;
+  vec2 g = vec2(edgeH(uv + vec2(e, 0.0)) - edgeH(uv - vec2(e, 0.0)), edgeH(uv + vec2(0.0, e)) - edgeH(uv - vec2(0.0, e))) / (2.0*e);
+  return normalize(N - (T*g.x + B*g.y)*k);
+}
+vec3 voronoi(vec2 x){
+  vec2 n = floor(x), f = fract(x); float md = 8.0; vec2 mid = n;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(float(i), float(j)); vec2 o = hash22(n + g); vec2 r = g + o - f; float d = dot(r, r);
+    if (d < md) { md = d; mid = n + g; }
+  }
+  return vec3(sqrt(md), mid);
+}
+// First three diffraction orders of a grating with ~1.45µm pitch
+vec3 grating(vec3 L, vec3 V, vec3 g){
+  float u = abs(dot(L + V, g));
+  vec3 c = vec3(0.0);
+  for (int m = 1; m <= 3; m++) c += spectral(u * 1450.0 / float(m));
+  return c;
+}
+
+// Holographic metallised film: mirror + diffraction + sliding iridescence
+vec3 foil(vec2 uv, vec3 N, vec3 T, vec3 B, vec3 V, vec3 Lk, vec3 Lf){
+  float ang = 0.0, rnd = 0.0; vec2 tilt = vec2(0.0); float facet = 1.0;
+  if (uPattern == 0) {                      // prism shards / cracked ice
+    vec3 v = voronoi(uv * uFoilScale); vec3 h = hash32(v.yz);
+    ang = h.x * MPI; rnd = h.y; tilt = (h.yz - 0.5) * 0.42;
+    facet = 0.85 + 0.15*smoothstep(0.0, 0.08, v.x);
+  } else if (uPattern == 1) {               // rainbow silk (linear grating, gently waving)
+    ang = 0.55 + 0.35*sin(uv.x*4.0 + uv.y*2.5) + 0.05*sin(uv.y*140.0);
+    rnd = uv.x*0.5 + uv.y*0.25; tilt = vec2(0.0, sin(uv.y*90.0)*0.015);
+  } else if (uPattern == 2) {               // sunburst
+    vec2 d = uv - 0.5; float a = atan(d.y, d.x);
+    float sec = floor((a/(2.0*MPI) + 0.5) * 80.0); vec3 h = hash32(vec2(sec, 3.7));
+    ang = a + MPI*0.5; rnd = h.x; tilt = normalize(d + 1e-5) * (h.y - 0.5) * 0.16;
+  } else {                                  // pixel dots
+    vec2 g = uv * uFoilScale; vec2 id = floor(g); vec3 h = hash32(id);
+    float dd = length(fract(g) - 0.5);
+    float inDot = 1.0 - smoothstep(0.36, 0.42, dd);
+    ang = mix(0.4, h.x*MPI, inDot); rnd = mix(0.0, h.y, inDot); tilt = (h.yz - 0.5) * 0.16 * inDot;
+    facet = 0.9 + 0.1*inDot;
+  }
+  vec3 Nm = normalize(N + T*tilt.x + B*tilt.y);
+  vec3 g = normalize(T*cos(ang) + B*sin(ang));
+  vec3 R = reflect(-V, Nm);
+  vec3 e = studioEnv(R);
+  vec3 metal = e * vec3(0.78, 0.80, 0.85);
+  float lk = pow(max(dot(Nm, normalize(Lk + V)), 0.0), 5.0);
+  float lf = pow(max(dot(Nm, normalize(Lf + V)), 0.0), 5.0);
+  vec3 dif = grating(Lk, V, g) * uKeyCol * lk * 1.35 + grating(Lf, V, g) * uFillCol * lf * 0.9;
+  float t = dot(V + uKeyDir, g) * 1.7 + rnd * 0.4 + dot(uv, vec2(0.65, 0.35)) + dot(R, vec3(0.3, 0.5, 0.0));
+  float el = dot(e, vec3(0.3, 0.59, 0.11));
+  vec3 hue = pow(rainbow(t), vec3(1.4));
+  // coloured metallic reflection: the film never reflects plain grey
+  vec3 col = e * mix(vec3(0.62, 0.64, 0.70), hue*1.25, 0.62) + hue*0.035 + dif;
+  return col * facet;
+}
+
+vec3 glitter(vec2 uv, float scale, float seed, float hexy, vec3 N, vec3 T, vec3 B, vec3 V, vec3 Lk, vec3 Lf){
+  vec2 gp = uv * scale; vec2 id = floor(gp); vec2 f = fract(gp) - 0.5;
+  vec3 h = hash32(id + seed);
+  if (hash12(id*0.71 + seed*3.1) > 0.62) return vec3(0.0);
+  vec2 q = abs(f - (h.xy - 0.5) * 0.3);
+  float d = hexy > 0.5 ? max(q.x*0.866 + q.y*0.5, q.y) : length(q);
+  float rad = 0.26 + h.z*0.12;
+  float aa = fwidth(gp.x) * 0.7 + 0.02;
+  float m = 1.0 - smoothstep(rad - aa, rad + aa, d);
+  if (m <= 0.0) return vec3(0.0);
+  vec3 h2 = hash32(id*1.37 + seed + 7.0);
+  vec3 fn = normalize(N + (T*(h2.x - 0.5) + B*(h2.y - 0.5)) * 1.15);
+  float sk = pow(max(dot(fn, normalize(Lk + V)), 0.0), 260.0);
+  float sf = pow(max(dot(fn, normalize(Lf + V)), 0.0), 260.0);
+  vec3 e = studioEnv(reflect(-V, fn));
+  vec3 tint = mix(vec3(1.0), rainbow(h2.z + dot(V, fn)*2.0), 0.7);
+  return m * tint * (uKeyCol*sk*40.0 + uFillCol*sf*18.0 + max(e - 0.12, 0.0)*0.45);
+}
+
+vec3 substrate(vec2 uv, vec3 N, vec3 T, vec3 B, vec3 V, vec3 Lk, vec3 Lf){
+  vec3 c = foil(uv, N, T, B, V, Lk, Lf);
+  // fine: dense small round flakes / hex: sparse large hexagonal flakes
+  if (uGlitterFine > 0.0) c += uGlitterFine * glitter(uv, 150.0, 1.0, 0.0, N, T, B, V, Lk, Lf);
+  if (uGlitterHex > 0.0) c += uGlitterHex * glitter(uv + 0.37, 52.0, 9.0, 1.0, N, T, B, V, Lk, Lf);
+  return c;
+}
+vec3 diffuseLight(vec3 N, vec3 Lk, vec3 Lf){
+  return uAmb + uKeyCol*max(dot(N, Lk), 0.0)*0.8 + uFillCol*max(dot(N, Lf), 0.0)*0.35;
+}
+// Gloss laminate clear coat on top of base colour
+vec3 clearcoat(vec3 base, vec3 N, vec3 V, vec3 Lk, vec3 Lf, vec2 uv, float gloss, float rough){
+  vec3 pn = vec3(vnoise(uv*95.0) - 0.5, vnoise(uv*95.0 + 17.3) - 0.5, 0.0);
+  vec3 Nl = normalize(N + pn * 0.03);
+  float fr = schlick(Nl, V, 0.045);
+  vec3 R = reflect(-V, Nl);
+  vec3 spec = (uKeyCol*ggx(Nl, V, Lk, rough) + uFillCol*ggx(Nl, V, Lf, rough*1.4)*0.6) * (0.2 + fr*4.0);
+  return base*(1.0 - fr) + studioEnv(R)*fr*gloss + spec;
+}
+
+void main(){
+  vec4 art = texture(uArt, vUv);
+  vec4 dat = texture(uData, vUv);
+  float mask = art.a;
+  float aa = clamp((mask - 0.5)/max(fwidth(mask), 1e-4) + 0.5, 0.0, 1.0);
+  if (aa < 0.02) discard;
+  vec3 N = normalize(vN), T = normalize(vT), B = normalize(vB);
+#if MODE != 0
+  if (!gl_FrontFacing) N = -N;
+#endif
+#ifdef FLIP_SIDED
+  N = -N;   // three.js flips winding for BackSide, so gl_FrontFacing is already inverted
+#endif
+  vec3 V = normalize(cameraPosition - vWP);
+  vec3 Lk = normalize(uKeyPos - vWP), Lf = normalize(uFillPos - vWP);
+  vec3 col; float alpha = aa;
+
+#if MODE == 0
+  // ---- assembled front face: substrate → ink → gloss laminate
+  float F = dat.g;
+  vec3 Nb = bumpN(N, T, B, vUv, uBump);
+  vec3 ink = toLin(art.rgb);
+  vec3 sub = substrate(vUv, Nb, T, B, V, Lk, Lf);
+  vec3 printed = ink * diffuseLight(Nb, Lk, Lf);
+  vec3 base = mix(printed, sub * ink, F);
+  col = clearcoat(base, Nb, V, Lk, Lf, vUv, 1.7, 0.055);
+
+#elif MODE == 1
+  // ---- die-cut edge wall (stacked shells, only a rim is drawn)
+  if (dat.a > 0.34) discard;
+  float e = uTexel * 2.0;
+  float gx = texture(uData, vUv + vec2(e, 0.0)).a - texture(uData, vUv - vec2(e, 0.0)).a;
+  float gy = texture(uData, vUv + vec2(0.0, e)).a - texture(uData, vUv - vec2(0.0, e)).a;
+  vec3 wall = -(T*gx + B*gy);
+  vec3 Nw = length(wall) > 1e-5 ? normalize(normalize(wall) + N*0.2) : N;
+  col = uEdgeCol * diffuseLight(Nw, Lk, Lf) * 0.9;
+  col += studioEnv(reflect(-V, Nw)) * schlick(Nw, V, 0.04) * 0.6;
+
+#elif MODE == 2
+  // ---- back side: silicone release liner, printed
+  vec3 Nb = bumpEdge(N, T, B, vUv, uBump*0.9);
+  vec3 alb = toLin(texture(uLiner, vec2(1.0 - vUv.x, vUv.y)).rgb);
+  vec3 base = alb * diffuseLight(Nb, Lk, Lf);
+  col = clearcoat(base, Nb, V, Lk, Lf, vUv*0.7, 0.55, 0.16);
+
+#elif MODE == 3
+  // ---- exploded: gloss laminate film (premultiplied, transparent)
+  vec3 Nb = bumpN(N, T, B, vUv, uBump*0.6);
+  float fr = schlick(Nb, V, 0.045);
+  vec3 R = reflect(-V, Nb);
+  vec3 spec = (uKeyCol*ggx(Nb, V, Lk, 0.05) + uFillCol*ggx(Nb, V, Lf, 0.07)*0.6) * (0.2 + fr*4.0);
+  float a0 = 0.10 + fr*0.5;
+  col = vec3(0.80, 0.88, 1.0)*0.05*a0 + studioEnv(R)*fr + spec;
+  alpha = aa * a0;
+  col *= aa;
+
+#elif MODE == 4
+  // ---- exploded: ink film (only where ink is printed)
+  float vis = dat.b * (1.0 - smoothstep(0.85, 0.98, dat.g));
+  if (vis < 0.02) discard;
+  vec3 ink = toLin(art.rgb);
+  col = ink * diffuseLight(N, Lk, Lf) * 1.05;
+  col += studioEnv(reflect(-V, N)) * schlick(N, V, 0.03) * 0.3;
+  alpha = aa * vis;
+
+#elif MODE == 5
+  // ---- exploded: holo glitter film on its own
+  col = substrate(vUv, N, T, B, V, Lk, Lf);
+
+#elif MODE == 6
+  // ---- exploded: adhesive (milky, translucent, tiny bubbles)
+  vec3 v = voronoi(vUv * 70.0);
+  float bub = (1.0 - smoothstep(0.06, 0.12, v.x)) * step(0.72, hash12(v.yz));
+  float fr = schlick(N, V, 0.04);
+  col = vec3(0.88, 0.90, 0.93) * diffuseLight(N, Lk, Lf) * 0.55 + studioEnv(reflect(-V, N))*fr*0.8 + bub*0.25;
+  alpha = aa * (0.26 + fr*0.4 + bub*0.25);
+
+#else
+  // ---- exploded: liner top (silicone coated face)
+  float stripe = 0.985 + 0.015*sin((vUv.x + vUv.y)*420.0);
+  vec3 base = vec3(0.90, 0.92, 0.95) * stripe * diffuseLight(N, Lk, Lf);
+  col = clearcoat(base, N, V, Lk, Lf, vUv, 0.8, 0.12);
+#endif
+
+  col *= uFade;
+  gl_FragColor = vec4(col, alpha);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+
+const VS_SHADOW = GLSL_COMMON + GLSL_CURL + /* glsl */`
+uniform vec3 uShadowDir; uniform float uGroundZ;
+varying vec2 vUv; varying float vH;
+void main(){
+  vec3 p; float a;
+  applyCurl(position.xy, uOffset, p, a);
+  vec4 wp = modelMatrix * vec4(p, 1.0);
+  float h = max(wp.z - uGroundZ, 0.0);
+  vec3 g = wp.xyz - uShadowDir * (h / uShadowDir.z);
+  g.z = uGroundZ + 0.002;
+  vH = h; vUv = uv;
+  gl_Position = projectionMatrix * viewMatrix * vec4(g, 1.0);
+}`;
+const FS_SHADOW = /* glsl */`
+uniform sampler2D uShadowTex; uniform float uOpacity; uniform float uLod; uniform float uLodK;
+varying vec2 vUv; varying float vH;
+void main(){
+  float a = textureLod(uShadowTex, vUv, clamp(uLod + vH*uLodK, 0.0, 6.0)).r;
+  float op = uOpacity * mix(1.0, 0.45, clamp(vH*0.8, 0.0, 1.0));
+  gl_FragColor = vec4(0.0, 0.0, 0.005, a*op);
+}`;
+
+const VS_GROUND = /* glsl */`
+varying vec3 vWP;
+void main(){ vec4 wp = modelMatrix*vec4(position,1.0); vWP = wp.xyz; gl_Position = projectionMatrix*viewMatrix*wp; }`;
+const FS_GROUND = GLSL_COMMON + /* glsl */`
+varying vec3 vWP;
+void main(){
+  vec3 L = normalize(uKeyPos - vWP);
+  float lam = max(L.z, 0.0);
+  float spot = exp(-dot(vWP.xy - vec2(-0.3, 0.4), vWP.xy - vec2(-0.3, 0.4)) * 0.055);
+  float grain = (hash12(floor(vWP.xy*420.0)) - 0.5) * 0.012 + (vnoise(vWP.xy*6.0) - 0.5)*0.02;
+  vec3 base = vec3(0.040, 0.037, 0.052);
+  vec3 col = base * (0.16 + 1.0*lam*spot) + grain*0.6;
+  col += vec3(0.020, 0.012, 0.032) * exp(-dot(vWP.xy, vWP.xy)*0.12);
+  gl_FragColor = vec4(max(col, 0.0), 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+
+/* =========================================================================
+   Image processing: PNG alpha → die-cut mask, height, foil map, shadow
+   ========================================================================= */
+function edt1d(f, n, d, v, z){
+  let k = 0; v[0] = 0; z[0] = -Infinity; z[1] = Infinity;
+  for (let q = 1; q < n; q++) {
+    let s = ((f[q] + q*q) - (f[v[k]] + v[k]*v[k])) / (2*q - 2*v[k]);
+    while (s <= z[k]) { k--; s = ((f[q] + q*q) - (f[v[k]] + v[k]*v[k])) / (2*q - 2*v[k]); }
+    k++; v[k] = q; z[k] = s; z[k+1] = Infinity;
+  }
+  k = 0;
+  for (let q = 0; q < n; q++) { while (z[k+1] < q) k++; const dq = q - v[k]; d[q] = dq*dq + f[v[k]]; }
+}
+// Exact Euclidean distance transform (Felzenszwalb & Huttenlocher). f: 0 at features, 1e20 elsewhere.
+function edt(f, w, h){
+  const n = Math.max(w, h);
+  const fd = new Float64Array(n), d = new Float64Array(n), v = new Int32Array(n), z = new Float64Array(n + 1);
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) fd[y] = f[y*w + x];
+    edt1d(fd, h, d, v, z);
+    for (let y = 0; y < h; y++) f[y*w + x] = d[y];
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) fd[x] = f[y*w + x];
+    edt1d(fd, w, d, v, z);
+    for (let x = 0; x < w; x++) f[y*w + x] = d[x];
+  }
+  const out = new Float32Array(w*h);
+  for (let i = 0; i < w*h; i++) out[i] = Math.sqrt(f[i]);
+  return out;
+}
+function boxBlur(src, w, h, r, passes = 3){
+  let a = Float32Array.from(src), b = new Float32Array(w*h);
+  const k = 1 / (2*r + 1);
+  for (let p = 0; p < passes; p++) {
+    for (let y = 0; y < h; y++) {
+      const o = y*w; let acc = 0;
+      for (let i = -r; i <= r; i++) acc += a[o + Math.min(w - 1, Math.max(0, i))];
+      for (let x = 0; x < w; x++) {
+        b[o + x] = acc * k;
+        acc += a[o + Math.min(w - 1, x + r + 1)] - a[o + Math.max(0, x - r)];
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      let acc = 0;
+      for (let i = -r; i <= r; i++) acc += b[Math.min(h - 1, Math.max(0, i))*w + x];
+      for (let y = 0; y < h; y++) {
+        a[y*w + x] = acc * k;
+        acc += b[Math.min(h - 1, y + r + 1)*w + x] - b[Math.max(0, y - r)*w + x];
+      }
+    }
+  }
+  return a;
+}
+const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a)/(b - a))); return t*t*(3 - 2*t); };
+
+function processArt(canvas){
+  const n = TEX, NN = n*n;
+  const img = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, n, n).data;
+  const inkA = new Float32Array(NN), dark = new Float32Array(NN), F = new Float32Array(NN);
+  const f = new Float64Array(NN);
+  for (let i = 0; i < NN; i++) {
+    const a = img[i*4 + 3] / 255;
+    const r = img[i*4]/255, g = img[i*4+1]/255, b = img[i*4+2]/255;
+    const lum = 0.299*r + 0.587*g + 0.114*b;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), sat = mx > 0 ? (mx - mn)/mx : 0;
+    const white = ss(0.80, 0.95, lum) * (1 - ss(0.08, 0.24, sat));
+    const dk = 1 - ss(0.10, 0.34, lum);
+    const fArt = Math.max(white, 0.42*(1 - dk)*(1 - white));
+    inkA[i] = a; dark[i] = a*dk; F[i] = a*fArt + (1 - a);
+    f[i] = a > 0.5 ? 0 : 1e20;
+  }
+  // dilate by BORDER+CLOSE, then erode by CLOSE → smooth die-cut line with bridged gaps
+  const dOut = edt(f, n, n);
+  const R1 = BORDER + CLOSE;
+  for (let i = 0; i < NN; i++) f[i] = dOut[i] <= R1 ? 1e20 : 0;
+  const dIn = edt(f, n, n);
+  const dEdge = new Float32Array(NN), mask = new Float32Array(NN);
+  for (let i = 0; i < NN; i++) {
+    dEdge[i] = dIn[i] - CLOSE;
+    mask[i] = Math.min(1, Math.max(0, dEdge[i] + 0.5));
+  }
+  const lineInk = boxBlur(dark, n, n, 1, 2);
+  const anyInk = boxBlur(inkA, n, n, 2, 2);
+
+  const art = new Uint8Array(NN*4), data = new Uint8Array(NN*4);
+  let cx = 0, cy = 0, cc = 0;
+  const boundary = [];
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const i = y*n + x, t = ((n - 1 - y)*n + x)*4;   // flip rows: texture v=0 is the bottom
+    const a = inkA[i];
+    art[t]   = Math.round(img[i*4]*a + 255*(1 - a));
+    art[t+1] = Math.round(img[i*4+1]*a + 255*(1 - a));
+    art[t+2] = Math.round(img[i*4+2]*a + 255*(1 - a));
+    art[t+3] = Math.round(mask[i]*255);
+    const bt = Math.min(1, Math.max(0, dEdge[i]/10));
+    const bevel = 1 - (1 - bt)*(1 - bt);
+    const h = bevel*(0.58 + 0.24*Math.min(1, lineInk[i]*1.4) + 0.18*anyInk[i]);
+    data[t]   = Math.round(Math.min(1, h)*255);
+    data[t+1] = Math.round(F[i]*255);
+    data[t+2] = Math.round(a*255);
+    data[t+3] = Math.round(Math.min(1, Math.max(0, dEdge[i]/24))*255);
+    if (mask[i] > 0.5 && (x & 3) === 0 && (y & 3) === 0) { cx += x; cy += y; cc++; }
+    if ((x % 6) === 0 && (y % 6) === 0 && dEdge[i] > 0 && dEdge[i] < 4) boundary.push(pxToLocal(x, y));
+  }
+  // shadow: 256² blurred mask
+  const s = 256, sc = n / s, sm = new Float32Array(s*s);
+  for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+    let acc = 0;
+    for (let j = 0; j < sc; j++) for (let k = 0; k < sc; k++) acc += mask[(y*sc + j)*n + x*sc + k];
+    sm[y*s + x] = acc / (sc*sc);
+  }
+  const sb = boxBlur(sm, s, s, 3, 3);
+  const shadow = new Uint8Array(s*s*4);
+  for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+    const v = Math.round(Math.min(1, sb[y*s + x])*255), t = ((s - 1 - y)*s + x)*4;
+    shadow[t] = shadow[t+1] = shadow[t+2] = v; shadow[t+3] = 255;
+  }
+  return { art, data, shadow, dEdge, mask, boundary, centroid: pxToLocal(cx/cc, cy/cc) };
+}
+function pxToLocal(x, y){ return new THREE.Vector2((x/TEX - 0.5)*SIZE, (0.5 - y/TEX)*SIZE); }
+function localToPx(p){ return [Math.round((p.x/SIZE + 0.5)*TEX), Math.round((0.5 - p.y/SIZE)*TEX)]; }
+
+/* =========================================================================
+   Sample artwork (drawn procedurally, transparent background PNG equivalents)
+   ========================================================================= */
+const INKC = '#1b1438';
+const FONT = '"Arial Black","Helvetica Neue",Helvetica,"Hiragino Sans",sans-serif';
+function newCanvas(){ const c = document.createElement('canvas'); c.width = c.height = TEX; return c; }
+function outlined(ctx, path, fill, { w = 13, round = 0 } = {}){
+  ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  path(); ctx.strokeStyle = INKC; ctx.lineWidth = round + w*2; ctx.stroke();
+  path(); ctx.fillStyle = fill; ctx.fill();
+  if (round > 0) { path(); ctx.strokeStyle = fill; ctx.lineWidth = round; ctx.stroke(); }
+  ctx.restore();
+}
+function outText(ctx, txt, x, y, size, fill, { rot = 0, w = 12, spacing = 0 } = {}){
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+  ctx.font = `900 ${size}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if ('letterSpacing' in ctx) ctx.letterSpacing = spacing + 'px';
+  ctx.lineJoin = 'round'; ctx.strokeStyle = INKC; ctx.lineWidth = w*2; ctx.strokeText(txt, 0, 0);
+  ctx.fillStyle = fill; ctx.fillText(txt, 0, 0);
+  ctx.restore();
+}
+const starPath = (ctx, cx, cy, R, r, n = 5, rot = -Math.PI/2) => () => {
+  ctx.beginPath();
+  for (let i = 0; i < n*2; i++) { const a = rot + i*Math.PI/n, rr = i % 2 ? r : R; ctx.lineTo(cx + Math.cos(a)*rr, cy + Math.sin(a)*rr); }
+  ctx.closePath();
+};
+const sparklePath = (ctx, x, y, s) => () => {
+  ctx.beginPath(); ctx.moveTo(x, y - s);
+  ctx.quadraticCurveTo(x, y, x + s*0.8, y); ctx.quadraticCurveTo(x, y, x, y + s);
+  ctx.quadraticCurveTo(x, y, x - s*0.8, y); ctx.quadraticCurveTo(x, y, x, y - s); ctx.closePath();
+};
+const heartPath = (ctx, cx, cy, s) => () => {
+  ctx.beginPath(); ctx.moveTo(cx, cy + s);
+  ctx.bezierCurveTo(cx - s*1.35, cy + s*0.05, cx - s*0.95, cy - s*1.15, cx, cy - s*0.42);
+  ctx.bezierCurveTo(cx + s*0.95, cy - s*1.15, cx + s*1.35, cy + s*0.05, cx, cy + s);
+  ctx.closePath();
+};
+const ellPath = (ctx, x, y, rx, ry, rot = 0) => () => { ctx.beginPath(); ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI*2); };
+const rrPath = (ctx, x, y, w, h, r) => () => { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); };
+function eyes(ctx, x1, x2, y, rx, ry){
+  for (const x of [x1, x2]) {
+    ctx.fillStyle = INKC; ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x + rx*0.3, y - ry*0.38, rx*0.42, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x - rx*0.3, y + ry*0.35, rx*0.18, 0, Math.PI*2); ctx.fill();
+  }
+}
+function ribbon(ctx, y, x0, x1, main, tail, text, textFill, size){
+  const h = 118;
+  for (const side of [-1, 1]) {
+    const ex = side < 0 ? x0 : x1;
+    outlined(ctx, () => {
+      ctx.beginPath();
+      ctx.moveTo(ex - side*30, y + 26); ctx.lineTo(ex + side*95, y + 30); ctx.lineTo(ex + side*55, y + h/2 + 34);
+      ctx.lineTo(ex + side*95, y + h + 40); ctx.lineTo(ex - side*30, y + h + 36); ctx.closePath();
+    }, tail, { w: 12, round: 14 });
+  }
+  outlined(ctx, rrPath(ctx, x0, y, x1 - x0, h, 22), main, { w: 13 });
+  outText(ctx, text, (x0 + x1)/2, y + h/2 + 4, size, textFill, { w: 11, spacing: 2 });
+}
+
+function artStar(){
+  const c = newCanvas(), ctx = c.getContext('2d');
+  const cx = 512, cy = 440;
+  outlined(ctx, sparklePath(ctx, 250, 185, 78), '#ffffff', { w: 12, round: 10 });
+  outlined(ctx, sparklePath(ctx, 812, 190, 58), '#fff27a', { w: 12, round: 10 });
+  outlined(ctx, sparklePath(ctx, 868, 548, 40), '#ffffff', { w: 11, round: 8 });
+  outlined(ctx, starPath(ctx, cx, cy, 322, 152), '#ffffff', { w: 13, round: 48 });
+  const g = ctx.createLinearGradient(0, cy - 180, 0, cy + 180);
+  g.addColorStop(0, '#ff8fd0'); g.addColorStop(1, '#8b78ff');
+  ctx.save(); starPath(ctx, cx, cy + 12, 186, 90)(); ctx.fillStyle = g; ctx.strokeStyle = g; ctx.lineJoin = 'round'; ctx.lineWidth = 34; ctx.stroke(); ctx.fill(); ctx.restore();
+  eyes(ctx, 462, 562, 448, 20, 30);
+  ctx.fillStyle = 'rgba(255,90,160,0.85)';
+  ctx.beginPath(); ctx.ellipse(424, 494, 26, 13, 0, 0, Math.PI*2); ctx.ellipse(600, 494, 26, 13, 0, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = INKC; ctx.lineWidth = 9; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(512, 476, 22, 0.15*Math.PI, 0.85*Math.PI); ctx.stroke();
+  ribbon(ctx, 708, 196, 828, '#ff3d8b', '#b3226a', 'STARLIGHT', '#fff27a', 86);
+  return c;
+}
+function artGhost(){
+  const c = newCanvas(), ctx = c.getContext('2d');
+  outlined(ctx, heartPath(ctx, 210, 300, 58), '#ff4f8b', { w: 12, round: 8 });
+  outlined(ctx, heartPath(ctx, 832, 742, 44), '#ff4f8b', { w: 12, round: 8 });
+  ctx.save(); ctx.translate(512, 520); ctx.rotate(-0.08); ctx.translate(-512, -520);
+  outlined(ctx, ellPath(ctx, 262, 560, 70, 44, -0.5), '#ffffff', { w: 13 });
+  outlined(ctx, ellPath(ctx, 756, 530, 70, 44, 0.6), '#ffffff', { w: 13 });
+  const body = () => {
+    ctx.beginPath(); ctx.moveTo(272, 720); ctx.lineTo(272, 440); ctx.arc(505, 440, 233, Math.PI, 0);
+    ctx.lineTo(738, 720);
+    const w = (738 - 272)/4;
+    for (let i = 0; i < 4; i++) ctx.arc(738 - w*(i + 0.5), 720, w/2, 0, Math.PI, false);
+    ctx.closePath();
+  };
+  outlined(ctx, body, '#ffffff', { w: 14 });
+  eyes(ctx, 440, 572, 452, 25, 37);
+  ctx.fillStyle = 'rgba(255,120,175,0.9)';
+  ctx.beginPath(); ctx.ellipse(395, 520, 30, 15, 0, 0, Math.PI*2); ctx.ellipse(618, 520, 30, 15, 0, 0, Math.PI*2); ctx.fill();
+  outlined(ctx, ellPath(ctx, 506, 552, 34, 42), '#5a0f2e', { w: 8 });
+  ctx.fillStyle = '#ff6f9d'; ctx.beginPath(); ctx.ellipse(506, 578, 22, 13, 0, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+  outText(ctx, 'BOO!', 742, 190, 150, '#a56bff', { rot: -0.2, w: 13 });
+  return c;
+}
+function artVolt(){
+  const c = newCanvas(), ctx = c.getContext('2d');
+  outlined(ctx, ellPath(ctx, 512, 490, 318, 318), '#241b4f', { w: 13 });
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 20; ctx.beginPath(); ctx.arc(512, 490, 282, 0, Math.PI*2); ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  for (let i = 0; i < 36; i++) { const a = i/36*Math.PI*2; ctx.beginPath(); ctx.arc(512 + Math.cos(a)*244, 490 + Math.sin(a)*244, 5, 0, Math.PI*2); ctx.fill(); }
+  for (const [x, y, s] of [[340, 330, 36], [700, 700, 30], [350, 690, 22], [712, 300, 20]]) {
+    sparklePath(ctx, x, y, s)(); ctx.fill();
+  }
+  const pts = [[578, 140], [322, 560], [482, 560], [418, 890], [728, 400], [562, 400], [660, 140]];
+  const bolt = () => { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); };
+  const g = ctx.createLinearGradient(0, 140, 0, 890);
+  g.addColorStop(0, '#fff45a'); g.addColorStop(0.55, '#ffc21f'); g.addColorStop(1, '#ff7a1a');
+  outlined(ctx, bolt, g, { w: 14, round: 22 });
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 14; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(596, 190); ctx.lineTo(420, 510); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(470, 640); ctx.lineTo(452, 740); ctx.stroke();
+  outlined(ctx, rrPath(ctx, 356, 800, 312, 96, 48), '#ff4fa0', { w: 13 });
+  outText(ctx, 'VOLT', 512, 852, 74, '#ffffff', { w: 10, spacing: 6 });
+  return c;
+}
+function artLove(){
+  const c = newCanvas(), ctx = c.getContext('2d');
+  const wing = () => {
+    const f = [[312, 372, 160, 58, -0.52], [286, 452, 162, 56, -0.18], [300, 530, 136, 50, 0.16], [336, 596, 100, 40, 0.5]];
+    for (const [x, y, rx, ry, r] of f) outlined(ctx, ellPath(ctx, x, y, rx, ry, r), '#ffffff', { w: 12 });
+  };
+  wing();
+  ctx.save(); ctx.translate(1024, 0); ctx.scale(-1, 1); wing(); ctx.restore();
+  ctx.save(); ctx.lineCap = 'round';
+  ctx.strokeStyle = INKC; ctx.lineWidth = 50; ctx.beginPath(); ctx.ellipse(512, 212, 124, 36, 0, 0, Math.PI*2); ctx.stroke();
+  ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 24; ctx.beginPath(); ctx.ellipse(512, 212, 124, 36, 0, 0, Math.PI*2); ctx.stroke();
+  ctx.restore();
+  const g = ctx.createLinearGradient(0, 300, 0, 720);
+  g.addColorStop(0, '#ff7ab0'); g.addColorStop(1, '#e8174f');
+  outlined(ctx, heartPath(ctx, 512, 500, 215), g, { w: 14, round: 12 });
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.ellipse(420, 400, 40, 20, -0.7, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(468, 368, 10, 0, Math.PI*2); ctx.fill();
+  ribbon(ctx, 690, 222, 802, '#2ec4b6', '#17857c', 'FOREVER', '#ffffff', 80);
+  return c;
+}
+function fitImage(img){
+  const c = newCanvas(), ctx = c.getContext('2d');
+  const box = TEX - 2*(BORDER + 90);
+  const s = Math.min(box / img.width, box / img.height);
+  const w = img.width*s, h = img.height*s;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, (TEX - w)/2, (TEX - h)/2, w, h);
+  return c;
+}
+
+// Finish options. The spec line under the sticker name is generated from these, so label = rendering.
+const HOLO = [
+  { name: 'プリズムシャード', pattern: 0, foilScale: 15 },
+  { name: 'レインボーシルク', pattern: 1, foilScale: 1 },
+  { name: 'サンバースト',     pattern: 2, foilScale: 1 },
+  { name: 'ピクセルドット',   pattern: 3, foilScale: 64 },
+];
+const GLITTER = [
+  { name: 'ファイングリッター', fine: 1.2,  hex: 0 },
+  { name: 'ヘックスグリッター', fine: 0,    hex: 1.25 },
+  { name: 'ヘビーグリッター',   fine: 1.3,  hex: 1.2 },
+  { name: 'グリッター控えめ',   fine: 0.35, hex: 0.3 },
+  { name: 'グリッターなし',     fine: 0,    hex: 0 },
+];
+const specOf = e => `${e.user ? 'ユーザー画像 · ' : ''}${HOLO[e.holo].name} ホロ · ${GLITTER[e.glitter].name} · グロスラミネート`;
+
+const CATALOG = [
+  { name: 'STARLIGHT', make: artStar,  holo: 0, glitter: 0 },
+  { name: 'BOO!',      make: artGhost, holo: 2, glitter: 1 },
+  { name: 'VOLT',      make: artVolt,  holo: 1, glitter: 3 },
+  { name: 'FOREVER',   make: artLove,  holo: 3, glitter: 2 },
+];
+
+/* =========================================================================
+   Renderer / scene
+   ========================================================================= */
+const canvasEl = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.9;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.setClearColor(0x0c0b10, 1);
+const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 60);
+
+const LIGHT = {
+  uKeyPos: { value: new THREE.Vector3(-2.6, 3.0, 5.0) },
+  uFillPos: { value: new THREE.Vector3(3.2, -1.6, 4.2) },
+  uKeyCol: { value: new THREE.Vector3(1.35, 1.29, 1.2) },
+  uFillCol: { value: new THREE.Vector3(0.45, 0.55, 0.85) },
+  uKeyDir: { value: new THREE.Vector3() },
+  uAmb: { value: new THREE.Vector3(0.15, 0.145, 0.18) },
+  uTime: { value: 0 },
+};
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.ShaderMaterial({
+  uniforms: { ...LIGHT }, vertexShader: VS_GROUND, fragmentShader: FS_GROUND, depthWrite: true,
+}));
+ground.position.z = GROUND_Z;
+scene.add(ground);
+
+// Printed back of the silicone release liner
+const linerTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 1024;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#f3f1ea'; ctx.fillRect(0, 0, 1024, 1024);
+  ctx.save(); ctx.translate(512, 512); ctx.rotate(-Math.PI/7);
+  ctx.fillStyle = '#b7c1d6'; ctx.font = `700 26px ${FONT}`; ctx.textAlign = 'center';
+  for (let r = -12; r <= 12; r++) {
+    const off = (r % 2) * 150;
+    for (let k = -4; k <= 4; k++) ctx.fillText('HOLO ✦ STICKER', k*300 + off, r*62);
+  }
+  ctx.fillStyle = '#d9a8c0'; ctx.font = `600 16px ${FONT}`;
+  for (let r = -12; r <= 12; r++) for (let k = -6; k <= 6; k++) ctx.fillText('PREMIUM DIE-CUT', k*300 + 150 + (r % 2)*150, r*62 + 31);
+  ctx.restore();
+  // crack-back slit
+  ctx.strokeStyle = 'rgba(90,96,112,0.75)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(0, 600); ctx.lineTo(1024, 540); ctx.stroke();
+  ctx.fillStyle = '#8a93a6'; ctx.font = `600 18px ${FONT}`;
+  ctx.fillText('◀ PEEL HERE', 612, 590);
+  const t = new THREE.CanvasTexture(c);
+  t.anisotropy = MAX_ANISO; t.colorSpace = THREE.NoColorSpace;
+  return t;
+})();
+
+const GEO_HI = new THREE.PlaneGeometry(SIZE, SIZE, 160, 160);
+const GEO_LO = new THREE.PlaneGeometry(SIZE, SIZE, 1, 1);
+
+function dataTexture(arr, size){
+  const t = new THREE.DataTexture(arr, size, size, THREE.RGBAFormat);
+  t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
+  t.anisotropy = MAX_ANISO; t.needsUpdate = true;
+  return t;
+}
+
+/* =========================================================================
+   Sticker instance
+   ========================================================================= */
+class Sticker {
+  constructor(entry, proc){
+    this.entry = entry; this.proc = proc;
+    this.root = new THREE.Group(); this.root.rotation.order = 'XYZ';
+    this.asm = new THREE.Group(); this.exp = new THREE.Group();
+    this.root.add(this.asm, this.exp);
+    this.artTex = dataTexture(proc.art, TEX);
+    this.dataTex = dataTexture(proc.data, TEX);
+    this.shadowTex = dataTexture(proc.shadow, 256);
+    this.U = {
+      ...LIGHT,
+      uArt: { value: this.artTex }, uData: { value: this.dataTex }, uLiner: { value: linerTex },
+      uTexel: { value: 1 / TEX }, uBump: { value: 0.012 },
+      uGlitterFine: { value: 0 }, uGlitterHex: { value: 0 }, uFoilScale: { value: 1 }, uPattern: { value: 0 },
+      uPeelO: { value: new THREE.Vector2() }, uPeelN: { value: new THREE.Vector2(1, 0) },
+      uPeelS: { value: 0 }, uPeelR: { value: 0.2 }, uPeelTh: { value: 0 }, uPeelK: { value: 0.2 },
+      uFade: { value: 1 },
+    };
+    this.materials = [];
+    this.applyFinish();
+
+    // --- assembled: gloss front, edge shells coloured by layer band, printed liner back
+    const front = this.mesh(GEO_HI, M.FRONT, T_ASM/2, { side: THREE.FrontSide });
+    this.asm.add(front);
+    const nShell = 12;
+    for (let k = 1; k < nShell; k++) {
+      const z = -T_ASM/2 + T_ASM*k/nShell;
+      const layer = LAYERS.find(l => z <= l.asmTop + 1e-6) || LAYERS[LAYERS.length - 1];
+      const edge = (layer.edge || [0.1, 0.09, 0.12]);
+      this.asm.add(this.mesh(GEO_HI, M.EDGE, z, { side: THREE.DoubleSide, edge }));
+    }
+    this.asm.add(this.mesh(GEO_HI, M.LINER_BACK, -T_ASM/2, { side: THREE.BackSide }));
+
+    // --- exploded layers
+    this.layerMeshes = LAYERS.map((l, i) => {
+      const transparent = l.mode === M.LAM || l.mode === M.INK || l.mode === M.GLUE;
+      const face = this.mesh(GEO_LO, l.mode, 0, { side: THREE.DoubleSide, transparent, premul: l.mode === M.LAM });
+      face.renderOrder = 10 + i*2 + 1;
+      this.exp.add(face);
+      const shells = [];
+      if (l.edge) {
+        const n = Math.max(2, Math.round(l.ex / 0.004));
+        for (let k = 0; k < n; k++) {
+          const s = this.mesh(GEO_LO, M.EDGE, 0, { side: THREE.DoubleSide, edge: l.edge });
+          s.renderOrder = 10 + i*2; this.exp.add(s); shells.push(s);
+        }
+      }
+      let back = null;
+      if (l.key === 'liner') { back = this.mesh(GEO_LO, M.LINER_BACK, 0, { side: THREE.BackSide }); this.exp.add(back); }
+      return { l, face, shells, back };
+    });
+    this.exp.visible = false;
+
+    // --- soft drop shadows (projected onto the ground, blurred by height)
+    this.shadows = [
+      this.shadowMesh(0.55, 0.6, 1.8),
+      this.shadowMesh(0.35, 2.2, 1.6),
+    ];
+    this.shadows.forEach(s => this.root.add(s));
+  }
+  applyFinish(){
+    const h = HOLO[this.entry.holo], g = GLITTER[this.entry.glitter];
+    this.U.uPattern.value = h.pattern; this.U.uFoilScale.value = h.foilScale;
+    this.U.uGlitterFine.value = g.fine; this.U.uGlitterHex.value = g.hex;
+  }
+  mesh(geo, mode, offset, { side, transparent = false, premul = false, edge = null }){
+    const mat = new THREE.ShaderMaterial({
+      defines: { MODE: mode },
+      uniforms: { ...this.U, uOffset: { value: offset }, uEdgeCol: { value: new THREE.Vector3(...(edge || [1, 1, 1])) } },
+      vertexShader: VS_STICKER, fragmentShader: FS_STICKER,
+      side, transparent, depthWrite: !transparent,
+      alphaToCoverage: !transparent,
+      extensions: { derivatives: true },
+    });
+    if (premul) {
+      mat.blending = THREE.CustomBlending;
+      mat.blendSrc = THREE.OneFactor; mat.blendDst = THREE.OneMinusSrcAlphaFactor;
+    }
+    this.materials.push(mat);
+    const m = new THREE.Mesh(geo, mat);
+    m.frustumCulled = false;
+    return m;
+  }
+  shadowMesh(opacity, lod, lodK){
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        ...this.U, uOffset: { value: -T_ASM/2 }, uShadowTex: { value: this.shadowTex },
+        uShadowDir: { value: SHADOW_DIR }, uGroundZ: { value: GROUND_Z },
+        uOpacity: { value: opacity }, uLod: { value: lod }, uLodK: { value: lodK },
+      },
+      vertexShader: VS_SHADOW, fragmentShader: FS_SHADOW, transparent: true, depthWrite: false,
+    });
+    mat.userData.baseOpacity = opacity;
+    this.materials.push(mat);
+    const m = new THREE.Mesh(GEO_HI, mat);
+    m.frustumCulled = false; m.renderOrder = 1;
+    return m;
+  }
+  setExplode(e){
+    const on = e > 0.002;
+    this.asm.visible = !on; this.exp.visible = on;
+    for (const s of this.shadows) s.material.uniforms.uOpacity.value = s.material.userData.baseOpacity * (1 - Math.min(1, e*2.5));
+    if (!on) return;
+    for (const { l, face, shells, back } of this.layerMeshes) {
+      const thick = THREE.MathUtils.lerp(l.asmThick, l.ex, e);
+      const top = THREE.MathUtils.lerp(l.asmTop, l.exTop, e);
+      face.material.uniforms.uOffset.value = top;
+      shells.forEach((s, k) => { s.material.uniforms.uOffset.value = top - thick*(k + 1)/shells.length; });
+      if (back) back.material.uniforms.uOffset.value = top - thick;
+    }
+  }
+  dispose(){
+    this.materials.forEach(m => m.dispose());
+    this.artTex.dispose(); this.dataTex.dispose(); this.shadowTex.dispose();
+  }
+  // nearEdge: zone where pressing grabs the edge (also switches the cursor to 'grab')
+  probe(p){
+    const [x, y] = localToPx(p);
+    if (x < 0 || y < 0 || x >= TEX || y >= TEX) return { inside: false, nearEdge: false };
+    const i = y*TEX + x;
+    const inside = this.proc.mask[i] > 0.5, d = this.proc.dEdge[i];
+    return { inside, nearEdge: inside && d < 52 };
+  }
+  // Outward normal of the die-cut line near p (from the distance field gradient), in local space
+  edgeNormal(p){
+    const [x, y] = localToPx(p), r = 12, D = this.proc.dEdge;
+    const at = (xx, yy) => D[Math.min(TEX - 1, Math.max(0, yy))*TEX + Math.min(TEX - 1, Math.max(0, xx))];
+    const gx = at(x + r, y) - at(x - r, y), gy = at(x, y + r) - at(x, y - r);
+    const n = new THREE.Vector2(-gx, gy);   // pixel y points down, local y points up
+    return n.lengthSq() > 1e-6 ? n.normalize() : p.clone().sub(this.proc.centroid).normalize();
+  }
+}
+const SHADOW_DIR = new THREE.Vector3(-0.28, 0.36, 1).normalize();
+
+/* =========================================================================
+   State
+   ========================================================================= */
+const entries = CATALOG.map(e => ({ ...e }));
+const cache = new Map();   // entry → processed data
+function procFor(entry){
+  if (!cache.has(entry)) cache.set(entry, processArt(entry.canvas || (entry.canvas = entry.make())));
+  return cache.get(entry);
+}
+
+class Spring {
+  constructor(v = 0, k = 120, c = 16){ this.x = v; this.v = 0; this.t = v; this.k = k; this.c = c; }
+  step(dt){ const a = this.k*(this.t - this.x) - this.c*this.v; this.v += a*dt; this.x += this.v*dt; }
+}
+const tiltX = new Spring(0, 90, 11), tiltY = new Spring(0, 90, 11);
+const peelD = new Spring(0, 260, 22);
+const explode = new Spring(0, 42, 12.5);
+const flipS = new Spring(0, 60, 13);
+const pointer = { x: 0, y: 0, sx: 0, sy: 0, inside: false };
+const peel = { o: new THREE.Vector2(), n: new THREE.Vector2(1, 0), active: false };
+
+let current = null, outgoing = null, index = 0;
+let transition = null;   // { t, dir }
+let explodedOn = false, flipped = false;
+let lastInteract = -10;
+
+function setUIFor(i){
+  const e = entries[i];
+  document.getElementById('name').textContent = e.name;
+  document.getElementById('spec').textContent = specOf(e);
+  if (!finishPanel.hidden) renderFinish();
+  document.getElementById('idx').textContent = String(i + 1).padStart(2, '0');
+  document.getElementById('total').textContent = String(entries.length).padStart(2, '0');
+  const dots = document.getElementById('dots');
+  dots.innerHTML = entries.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('');
+}
+
+function show(i, dir = 1){
+  i = (i + entries.length) % entries.length;
+  if (transition && outgoing) { scene.remove(outgoing.root); outgoing.dispose(); outgoing = null; }
+  const s = new Sticker(entries[i], procFor(entries[i]));
+  scene.add(s.root);
+  if (current) {
+    outgoing = current;
+    transition = { t: 0, dir };
+  }
+  current = s; index = i;
+  peelD.x = peelD.t = peelD.v = 0; peel.active = false;
+  setUIFor(i);
+  // warm next/prev caches while idle
+  setTimeout(() => { procFor(entries[(i + 1) % entries.length]); }, 400);
+}
+const next = () => show(index + 1, 1);
+const prev = () => show(index - 1, -1);
+
+/* =========================================================================
+   Interaction
+   ========================================================================= */
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const tmpM = new THREE.Matrix4();
+function localHit(clientX, clientY){
+  const r = canvasEl.getBoundingClientRect();
+  ndc.set(((clientX - r.left)/r.width)*2 - 1, -((clientY - r.top)/r.height)*2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  current.root.updateMatrixWorld();
+  tmpM.copy(current.root.matrixWorld).invert();
+  const o = raycaster.ray.origin.clone().applyMatrix4(tmpM);
+  const d = raycaster.ray.direction.clone().transformDirection(tmpM);
+  if (Math.abs(d.z) < 1e-5) return null;
+  const t = -o.z / d.z;
+  if (t < 0) return null;
+  return new THREE.Vector2(o.x + d.x*t, o.y + d.y*t);
+}
+const canPeel = () => current && !transition && !explodedOn && !flipped && Math.abs(flipS.x) < 0.05;
+
+let drag = null;
+canvasEl.addEventListener('pointerdown', ev => {
+  if (!current) return;
+  canvasEl.setPointerCapture(ev.pointerId);
+  lastInteract = performance.now()/1000;
+  const p = localHit(ev.clientX, ev.clientY);
+  const probe = p ? current.probe(p) : { inside: false, nearEdge: false };
+  drag = {
+    x0: ev.clientX, y0: ev.clientY, t0: performance.now(), moved: 0,
+    mode: canPeel() && probe.nearEdge ? 'peel' : 'tilt',
+    tx0: tiltX.t, ty0: tiltY.t, hist: [[ev.clientX, performance.now()]],
+    side: sideZone(ev.clientX, probe.inside),
+  };
+  if (drag.mode === 'peel') {
+    peel.active = true; peel.o.copy(p);
+    peel.n.copy(current.edgeNormal(p));
+    drag.nCenter = peel.n.clone();
+    peelD.k = 420; peelD.c = 38;
+    canvasEl.style.cursor = 'grabbing';
+  }
+});
+canvasEl.addEventListener('pointermove', ev => {
+  const r = canvasEl.getBoundingClientRect();
+  pointer.x = ((ev.clientX - r.left)/r.width)*2 - 1;
+  pointer.y = -(((ev.clientY - r.top)/r.height)*2 - 1);
+  pointer.inside = true;
+  if (!current) return;
+  if (drag) {
+    lastInteract = performance.now()/1000;
+    const dx = ev.clientX - drag.x0, dy = ev.clientY - drag.y0;
+    drag.moved = Math.max(drag.moved, Math.hypot(dx, dy));
+    drag.hist.push([ev.clientX, performance.now()]); if (drag.hist.length > 8) drag.hist.shift();
+    if (drag.mode === 'tilt') {
+      const k = 2.4 / Math.min(r.width, r.height);
+      tiltY.t = THREE.MathUtils.clamp(drag.ty0 + dx*k, -0.75, 0.75);
+      tiltX.t = THREE.MathUtils.clamp(drag.tx0 + dy*k, -0.7, 0.7);
+    } else {
+      const p = localHit(ev.clientX, ev.clientY);
+      if (p) {
+        const v = peel.o.clone().sub(p);
+        const d = v.length();
+        const w = THREE.MathUtils.smoothstep(d, 0.02, 0.3);
+        const n = d > 1e-4 ? v.normalize() : drag.nCenter.clone();
+        peel.n.copy(drag.nCenter).lerp(n, w).normalize();
+        peelD.t = Math.min(d, SIZE*1.1);
+      }
+    }
+    return;
+  }
+  // hover: the cursor signals where the edge can be grabbed; side strips show a nav chevron
+  const p = localHit(ev.clientX, ev.clientY);
+  const probe = p ? current.probe(p) : { inside: false, nearEdge: false };
+  const side = sideZone(ev.clientX, probe.inside);
+  showSide(side);
+  canvasEl.style.cursor = canPeel() && probe.nearEdge ? 'grab' : side ? 'pointer' : 'default';
+});
+canvasEl.addEventListener('pointerleave', () => {
+  pointer.inside = false;
+  showSide(0);
+});
+// Left/right screen strips (outside the sticker) navigate on click; the sticker itself never does
+const sideL = document.getElementById('sideL'), sideR = document.getElementById('sideR');
+function sideZone(clientX, onSticker){
+  if (onSticker) return 0;
+  const w = innerWidth, band = Math.max(56, w*0.18);
+  return clientX < band ? -1 : clientX > w - band ? 1 : 0;
+}
+function showSide(side){ sideL.classList.toggle('on', side < 0); sideR.classList.toggle('on', side > 0); }
+function endDrag(ev){
+  if (!drag) return;
+  const dt = performance.now() - drag.t0;
+  const dx = ev.clientX - drag.x0;
+  const h = drag.hist, a = h[0], b = h[h.length - 1];
+  const vx = (b[0] - a[0]) / Math.max(1, b[1] - a[1]);   // px/ms
+  if (drag.mode === 'peel') {
+    // settle back without overshoot: a bouncing spring would cross zero and re-lift the edge
+    peel.active = false; peelD.t = 0; peelD.k = 190; peelD.c = 26;
+    canvasEl.style.cursor = 'grab';
+  } else {
+    if (drag.moved < 6 && dt < 350) {
+      const p = localHit(ev.clientX, ev.clientY);
+      const side = sideZone(ev.clientX, p ? current.probe(p).inside : false);
+      if (side && side === drag.side) side > 0 ? next() : prev();
+    }
+    else if (Math.abs(vx) > 0.8 && Math.abs(dx) > 50 && dt < 700) {
+      tiltX.t = 0; tiltY.t = 0;
+      vx < 0 ? next() : prev();
+    } else { tiltX.t = 0; tiltY.t = 0; }
+  }
+  drag = null;
+}
+canvasEl.addEventListener('pointerup', endDrag);
+canvasEl.addEventListener('pointercancel', endDrag);
+
+document.getElementById('next').onclick = next;
+document.getElementById('prev').onclick = prev;
+const btnExplode = document.getElementById('explode');
+btnExplode.onclick = () => {
+  explodedOn = !explodedOn; explode.t = explodedOn ? 1 : 0;
+  btnExplode.classList.toggle('on', explodedOn);
+  peelD.t = 0;
+};
+const btnFlip = document.getElementById('flip');
+btnFlip.onclick = () => { flipped = !flipped; flipS.t = flipped ? 1 : 0; btnFlip.classList.toggle('on', flipped); peelD.t = 0; };
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') next();
+  else if (e.key === 'ArrowLeft') prev();
+  else if (e.key === 'e' || e.key === 'E') btnExplode.click();
+  else if (e.key === 'f' || e.key === 'F') btnFlip.click();
+});
+
+// finish panel: pick holo pattern / glitter for the current sticker (applies live)
+const finishPanel = document.getElementById('finishPanel'), btnFinish = document.getElementById('finish');
+function renderFinish(){
+  const e = entries[index];
+  const chips = (el, list, key) => {
+    el.innerHTML = '';
+    list.forEach((o, k) => {
+      const b = document.createElement('button');
+      b.textContent = o.name; b.className = e[key] === k ? 'on' : '';
+      b.onclick = () => { e[key] = k; current.applyFinish(); setUIFor(index); };
+      el.appendChild(b);
+    });
+  };
+  chips(document.getElementById('chipsHolo'), HOLO, 'holo');
+  chips(document.getElementById('chipsGlitter'), GLITTER, 'glitter');
+}
+function openFinish(open){
+  finishPanel.hidden = !open; btnFinish.classList.toggle('on', open); btnFinish.setAttribute('aria-expanded', open);
+  hintEl.style.opacity = open ? 0 : '';
+  if (open) renderFinish();
+}
+btnFinish.onclick = () => openFinish(finishPanel.hidden);
+canvasEl.addEventListener('pointerdown', () => { if (!finishPanel.hidden) openFinish(false); });
+addEventListener('keydown', e => { if (e.key === 'Escape') openFinish(false); });
+
+// user PNGs
+async function addFiles(files){
+  const list = [...files].filter(f => f.type.startsWith('image/'));
+  if (!list.length) return;
+  let first = -1;
+  for (const f of list) {
+    const url = URL.createObjectURL(f);
+    const img = new Image(); img.src = url;
+    try { await img.decode(); } catch { URL.revokeObjectURL(url); continue; }
+    const name = f.name.replace(/\.[^.]+$/, '').toUpperCase().slice(0, 24);
+    entries.push({ name, user: true, canvas: fitImage(img), holo: 0, glitter: 0 });
+    URL.revokeObjectURL(url);
+    if (first < 0) first = entries.length - 1;
+  }
+  if (first >= 0) { show(first, 1); openFinish(true); }
+}
+document.getElementById('file').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
+const drop = document.getElementById('drop');
+addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('on'); });
+addEventListener('dragleave', e => { if (e.relatedTarget === null) drop.classList.remove('on'); });
+addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('on'); addFiles(e.dataTransfer.files); });
+
+const hintEl = document.getElementById('hint');
+
+/* =========================================================================
+   Exploded view labels
+   ========================================================================= */
+const labelsEl = document.getElementById('labels');
+const leadersEl = document.getElementById('leaders');
+const labelEls = LAYERS.map((l, i) => {
+  const d = document.createElement('div'); d.className = 'lbl';
+  d.innerHTML = `<span class="n">0${LAYERS.length - i}</span><span class="t">${l.name}</span><span class="um">${l.um} µm</span><br><span class="s">${l.sub}</span>`;
+  labelsEl.appendChild(d); return d;
+});
+const totalEl = document.createElement('div'); totalEl.className = 'total';
+totalEl.textContent = `総厚 ≈ ${TOTAL_UM} µm（${(TOTAL_UM/1000).toFixed(2)} mm）· 厚みは誇張表示`;
+labelsEl.appendChild(totalEl);
+const lines = LAYERS.map(l => {
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.innerHTML = `<line stroke="rgba(241,238,247,0.45)" stroke-width="1"/><circle r="3" fill="#f1eef7"/><text font-size="10" fill="#c9b6ff" font-family="inherit">0${LAYERS.length - LAYERS.indexOf(l)}</text>`;
+  leadersEl.appendChild(g); return g;
+});
+const _v = new THREE.Vector3();
+function toScreen(v, w, h){ _v.copy(v).project(camera); return [(_v.x*0.5 + 0.5)*w, (-_v.y*0.5 + 0.5)*h]; }
+function updateLabels(e){
+  const w = innerWidth, h = innerHeight;
+  const op = THREE.MathUtils.smoothstep(e, 0.7, 0.98);
+  leadersEl.style.opacity = op;
+  hintEl.style.visibility = e > 0.3 ? 'hidden' : 'visible';
+  labelEls.forEach(el => el.style.opacity = op);
+  totalEl.style.opacity = op;
+  if (op <= 0 || !current) return;
+  const root = current.root; root.updateMatrixWorld();
+  // pick the boundary point that sits furthest right on screen
+  let best = null, bx = -1e9, minX = 1e9, maxY = -1e9;
+  const top = LAYERS[LAYERS.length - 1];
+  for (const b of current.proc.boundary) {
+    const [sx] = toScreen(_v.set(b.x, b.y, top.exTop).applyMatrix4(root.matrixWorld), w, h);
+    if (sx > bx) { bx = sx; best = b; }
+    const [lx, ly] = toScreen(_v.set(b.x, b.y, -LAYERS[0].ex).applyMatrix4(root.matrixWorld), w, h);
+    minX = Math.min(minX, sx, lx); maxY = Math.max(maxY, ly);
+  }
+  const narrow = w < 560;
+  const pts = LAYERS.map(l => toScreen(new THREE.Vector3(best.x, best.y, THREE.MathUtils.lerp(l.asmTop, l.exTop, e) - l.ex*0.5).applyMatrix4(root.matrixWorld), w, h));
+
+  if (narrow) {
+    // phone: numbered dots on the stack + a legend underneath
+    exShift += (0 - exShift)*0.1; exZoom += (1 - exZoom)*0.1;
+    const legendTop = Math.min(h - 250, maxY + 30);
+    LAYERS.forEach((l, i) => {
+      const [px, py] = pts[i];
+      const k = LAYERS.length - 1 - i;
+      const el = labelEls[i];
+      el.style.left = '20px'; el.style.top = (legendTop + k*30) + 'px';
+      const [ln, c, tx] = lines[i].children;
+      ln.setAttribute('x1', px); ln.setAttribute('y1', py); ln.setAttribute('x2', px + 12); ln.setAttribute('y2', py);
+      c.setAttribute('cx', px); c.setAttribute('cy', py);
+      tx.setAttribute('x', px + 15); tx.setAttribute('y', py + 3.5); tx.style.display = '';
+    });
+    totalEl.style.left = '20px'; totalEl.style.top = (legendTop + LAYERS.length*30 + 4) + 'px';
+    return;
+  }
+
+  const lw = Math.max(...labelEls.map(el => el.offsetWidth), totalEl.offsetWidth);
+  const colX = Math.min(w - 16 - lw - 14, Math.max(bx + 28, w*0.6));
+  // feedback: slide (and if needed shrink) the stack until it clears the label column
+  if (e > 0.5) {
+    const worldPerPx = 2*camera.position.z*Math.tan(THREE.MathUtils.degToRad(camera.fov/2)) / h;
+    const overR = (bx + 24) - colX, overL = 12 - minX;
+    if (overR > 0 && overL > 0) exZoom = Math.min(3, exZoom + 0.02);
+    else if (overR < -30 && overL < -30 && exZoom > 1) exZoom = Math.max(1, exZoom - 0.01);
+    const shift = overR > 0 ? overR : (overL > 0 ? -overL : 0);
+    exShift = THREE.MathUtils.clamp(exShift + shift*worldPerPx*0.12, 0.0, 2.4);
+  }
+  LAYERS.forEach((l, i) => {
+    const [px, py] = pts[i];
+    const el = labelEls[i];
+    el.style.left = (colX + 14) + 'px'; el.style.top = py + 'px';
+    const [ln, c, tx] = lines[i].children;
+    ln.setAttribute('x1', px); ln.setAttribute('y1', py); ln.setAttribute('x2', colX + 6); ln.setAttribute('y2', py);
+    c.setAttribute('cx', px); c.setAttribute('cy', py);
+    tx.style.display = 'none';
+  });
+  const lowest = pts[0][1];
+  totalEl.style.left = (colX + 14) + 'px'; totalEl.style.top = (lowest + 38) + 'px';
+}
+
+/* =========================================================================
+   Frame loop
+   ========================================================================= */
+let fitDist = 7, exShift = 0.6, exZoom = 1;
+function resize(){
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  const half = Math.tan(THREE.MathUtils.degToRad(camera.fov/2));
+  const need = SIZE*1.42/2;
+  fitDist = Math.max(need/half, need/(half*camera.aspect));
+}
+addEventListener('resize', resize);
+
+const clock = new THREE.Clock();
+const ease = t => t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3)/2;
+const tmpQ = new THREE.Quaternion(), tmpE = new THREE.Euler(0, 0, 0, 'XYZ'), tmpV = new THREE.Vector3();
+
+function applyPeel(s){
+  const d = Math.max(0, peelD.x);
+  const U = s.U;
+  if (d < 1e-4 || explodedOn) { U.uPeelS.value = 0; return; }
+  U.uPeelO.value.copy(peel.o);
+  U.uPeelN.value.copy(peel.n);
+  U.uPeelS.value = d*0.86;
+  U.uPeelR.value = 0.13 + 0.07*Math.min(d, 1.5);
+  U.uPeelTh.value = Math.min(Math.PI, 0.45*THREE.MathUtils.smoothstep(d, 0, 0.06) + d*2.3);
+}
+
+function placeSticker(s, t, extraX, extraRotY, e){
+  const idle = THREE.MathUtils.clamp((t - lastInteract - 1.5)/2, 0, 1);
+  const hov = pointer.inside && !drag ? 1 : 0;
+  const rx = tiltX.x + idle*0.05*Math.sin(t*0.53) - pointer.sy*0.12*hov*(1 - e);
+  const ry = tiltY.x + idle*0.08*Math.sin(t*0.37 + 1.0) + pointer.sx*0.14*hov*(1 - e) + flipS.x*Math.PI;
+  tmpE.set(rx - 1.02*e, ry + extraRotY, 0.42*e);
+  s.root.rotation.copy(tmpE);
+  tmpQ.setFromEuler(tmpE);
+  tmpV.set(0, 0, EX_CENTER*e).applyQuaternion(tmpQ);
+  const lift = innerWidth < 560 ? 0.7 : 0.05;
+  s.root.position.set(extraX - tmpV.x - exShift*e, -tmpV.y + lift*e, -tmpV.z);
+  s.setExplode(e);
+}
+
+function frame(){
+  const dt = Math.min(clock.getDelta(), 1/30);
+  const t = clock.elapsedTime;
+  LIGHT.uTime.value = t;
+
+  pointer.sx += (pointer.x - pointer.sx)*Math.min(1, dt*4);
+  pointer.sy += (pointer.y - pointer.sy)*Math.min(1, dt*4);
+  LIGHT.uKeyPos.value.set(-2.6 + pointer.sx*2.2, 3.0 + pointer.sy*1.8, 5.0);
+  LIGHT.uKeyDir.value.copy(LIGHT.uKeyPos.value).normalize();
+  LIGHT.uFillPos.value.set(3.2 - pointer.sx*0.8, -1.6, 4.2);
+
+  for (let i = 0; i < 2; i++) {
+    const h = dt/2;
+    tiltX.step(h); tiltY.step(h); peelD.step(h); explode.step(h); flipS.step(h);
+  }
+  // once released and nearly flat, lie exactly flat (no residual micro-lift)
+  if (!peel.active && peelD.t === 0 && peelD.x < 0.004) { peelD.x = 0; peelD.v = 0; }
+  const e = THREE.MathUtils.clamp(explode.x, 0, 1.05);
+
+  // camera: slight parallax with pointer, pulls back for exploded view
+  const dist = fitDist * (1 + (0.62 + (exZoom - 1))*Math.min(1, e));
+  camera.position.set(pointer.sx*0.35*(1 - e), pointer.sy*0.25*(1 - e) + 0.15*e, dist);
+  camera.lookAt(0, 0, 0);
+
+  if (transition) {
+    transition.t += dt / 0.75;
+    const p = Math.min(1, transition.t), q = ease(p);
+    if (outgoing) placeSticker(outgoing, t, -transition.dir*6.2*q, -transition.dir*0.9*q, e);
+    placeSticker(current, t, transition.dir*6.2*(1 - q), transition.dir*0.9*(1 - q), e);
+    if (p >= 1) { if (outgoing) { scene.remove(outgoing.root); outgoing.dispose(); } outgoing = null; transition = null; }
+  } else {
+    placeSticker(current, t, 0, 0, e);
+  }
+  applyPeel(current);
+  if (outgoing) outgoing.U.uPeelS.value = 0;
+
+  camera.updateMatrixWorld();
+  updateLabels(e);
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+resize();
+requestAnimationFrame(() => {
+  show(0);
+  document.getElementById('busy').remove();
+  requestAnimationFrame(frame);
+});
+</script>
+</body>
+</html>
